@@ -1,0 +1,16 @@
+## Interface: 30300
+## Author: Kesava
+## Title: VolckerNamePlates
+## Version: 1
+## Notes: Prettier nameplates.
+## SavedVariables: VolckerNamePlatesGDB
+## X-Curse-Packaged-Version: 1
+## X-Curse-Project-Name: VolckerNamePlates
+## X-Curse-Project-ID: volckernameplates
+## X-Website: https://github.com/volckerr/VolckerNamePlates
+## X-Email: bkader@email.com
+
+Embeds.xml
+Locales.xml
+Core.xml
+Modules.xml
