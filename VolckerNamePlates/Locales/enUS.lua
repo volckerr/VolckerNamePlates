@@ -135,6 +135,17 @@ L["Spell name"] = true
 L["Large"] = true
 L["Small"] = true
 -- modules
+L["Auras"] = true
+L["Show target debuffs"] = true
+L["Show your debuffs above the current target's nameplate."] = true
+L["Icon size"] = true
+L["Size of the debuff icons shown above the target nameplate."] = true
+L["Icons per row"] = true
+L["How many debuff icons to show on each row."] = true
+L["Maximum auras"] = true
+L["Maximum number of target debuffs to display."] = true
+L["Aura Y offset"] = true
+L["Vertical offset for the target debuffs above the nameplate."] = true
 L["Arena modifications"] = true
 L["Cast bars"] = true
 L["Enable cast bar"] = true
