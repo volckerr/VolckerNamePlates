@@ -35,11 +35,7 @@ local function ApplyLayout(frame)
 		button:SetSize(ICON_SIZE, ICON_SIZE)
 	end
 
-	if frame.target and UnitExists("target") then
-		UpdateTargetAuras(frame, "target")
-	else
-		ArrangeButtons(frame.auras)
-	end
+	ArrangeButtons(frame.auras)
 end
 
 local function GetFrameByUnit(unit)
@@ -218,7 +214,7 @@ UpdateTargetAuras = function(frame, unit)
 		return
 	end
 
-	if frame.friend or not frame.target then
+	if frame.friend then
 		HideAuras(frame)
 		return
 	end
@@ -262,10 +258,6 @@ function mod:PostShow(msg, frame)
 	end
 
 	ApplyLayout(frame)
-
-	if frame.target and UnitExists("target") then
-		UpdateTargetAuras(frame, "target")
-	end
 end
 
 function mod:PostHide(msg, frame)
@@ -275,19 +267,31 @@ end
 function mod:PostTarget(msg, frame, isTarget)
 	if isTarget then
 		UpdateTargetAuras(frame, "target")
-	else
-		HideAuras(frame)
 	end
 end
 
 function mod:UNIT_AURA(event, unit)
-	if unit ~= "target" then
+	if not unit then
 		return
 	end
 
 	local frame = GetFrameByUnit(unit)
 	if frame then
 		UpdateTargetAuras(frame, unit)
+	end
+end
+
+function mod:NAME_PLATE_UNIT_ADDED(event, unit)
+	local frame = GetFrameByUnit(unit)
+	if frame then
+		UpdateTargetAuras(frame, unit)
+	end
+end
+
+function mod:NAME_PLATE_UNIT_REMOVED(event, unit)
+	local frame = GetFrameByUnit(unit)
+	if frame then
+		HideAuras(frame)
 	end
 end
 
@@ -321,8 +325,8 @@ function mod:GetOptions()
 	return {
 		enabled = {
 			type = "toggle",
-			name = L["Show target debuffs"],
-			desc = L["Show your debuffs above the current target's nameplate."],
+			name = L["Show nameplate debuffs"],
+			desc = L["Show your debuffs above visible enemy nameplates."],
 			order = 10
 		},
 		icon_size = {
@@ -389,6 +393,8 @@ function mod:OnEnable()
 	self:RegisterMessage("VolckerNamePlates_PostHide", "PostHide")
 	self:RegisterMessage("VolckerNamePlates_PostTarget", "PostTarget")
 	self:RegisterEvent("UNIT_AURA")
+	self:RegisterEvent("NAME_PLATE_UNIT_ADDED")
+	self:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 	RefreshAllFrames()
 end
 
@@ -398,6 +404,8 @@ function mod:OnDisable()
 	self:UnregisterMessage("VolckerNamePlates_PostHide", "PostHide")
 	self:UnregisterMessage("VolckerNamePlates_PostTarget", "PostTarget")
 	self:UnregisterEvent("UNIT_AURA")
+	self:UnregisterEvent("NAME_PLATE_UNIT_ADDED")
+	self:UnregisterEvent("NAME_PLATE_UNIT_REMOVED")
 
 	for _, frame in pairs(addon.frameList) do
 		if frame.kui then

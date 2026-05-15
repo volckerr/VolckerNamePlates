@@ -136,8 +136,8 @@ L["Large"] = true
 L["Small"] = true
 -- modules
 L["Auras"] = true
-L["Show target debuffs"] = true
-L["Show your debuffs above the current target's nameplate."] = true
+L["Show nameplate debuffs"] = true
+L["Show your debuffs above visible enemy nameplates."] = true
 L["Icon size"] = true
 L["Size of the debuff icons shown above the target nameplate."] = true
 L["Icons per row"] = true
