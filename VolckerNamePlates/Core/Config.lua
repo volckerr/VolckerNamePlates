@@ -476,7 +476,7 @@ do
 					yoffset = {
 						type = "range",
 						name = L["Global Y offset"],
-						desc = L["Move the base nameplate placement up or down. On patched clients this also affects the default click-box position."],
+						desc = L["Move the base nameplate placement up or down."],
 						order = 150,
 						bigStep = 1,
 						min = -100,
@@ -1219,6 +1219,9 @@ do
 			addon:ApplyBaseNameplateOffset()
 		end,
 		function(frame)
+			if frame.UpdateBaseClickRegion then
+				frame:UpdateBaseClickRegion()
+			end
 			frame:SetCentre()
 			addon:UpdateBackground(frame, frame.trivial)
 			addon:UpdateHealthBar(frame, frame.trivial)

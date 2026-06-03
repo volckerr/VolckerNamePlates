@@ -11,8 +11,11 @@ local C_NamePlate = C_NamePlate
 
 local floor = math.floor
 local max = math.max
+local min = math.min
 local GetTime = GetTime
 local UnitExists = UnitExists
+local UnitGUID = UnitGUID
+local sort = table.sort
 
 mod.uiName = L["Auras"]
 
@@ -21,7 +24,8 @@ local ICON_SPACING = 2
 local MAX_AURAS = 8
 local AURAS_PER_ROW = 4
 local AURA_Y_OFFSET = 14
-local ArrangeButtons, UpdateTargetAuras
+local AURA_SYNC_INTERVAL = 0.2
+local ArrangeButtons, UpdateTargetAuras, HideAuras, SyncFrameAuras
 
 local function ApplyLayout(frame)
 	if not frame.auras then
@@ -49,8 +53,41 @@ local function GetFrameByUnit(unit)
 			return plate.kui
 		end
 	end
+end
 
-	return addon:GetUnitPlate(unit)
+local function GetUnitByFrame(frame)
+	if not (frame and frame.parentFrame and C_NamePlate and C_NamePlate.GetNamePlateForUnit) then
+		return
+	end
+
+	for i = 1, 60 do
+		local unit = "nameplate" .. i
+		if UnitExists(unit) and C_NamePlate.GetNamePlateForUnit(unit) == frame.parentFrame then
+			return unit
+		end
+	end
+end
+
+SyncFrameAuras = function(frame)
+	if not (frame and frame.auras) then
+		return
+	end
+
+	local unit = GetUnitByFrame(frame)
+	if not unit then
+		HideAuras(frame)
+		return
+	end
+
+	local guid = UnitGUID(unit)
+	if not guid or (frame.auras.guid and frame.auras.guid ~= guid) then
+		HideAuras(frame)
+		if not guid then
+			return
+		end
+	end
+
+	UpdateTargetAuras(frame, unit)
 end
 
 local function HideAuraButton(button)
@@ -171,7 +208,7 @@ local function GetAuraButton(container, index)
 	return container.buttons[index] or CreateAuraButton(container, index)
 end
 
-local function HideAuras(frame)
+HideAuras = function(frame)
 	if not (frame and frame.auras) then
 		return
 	end
@@ -181,6 +218,8 @@ local function HideAuras(frame)
 	end
 
 	frame.auras:Hide()
+	frame.auras.unit = nil
+	frame.auras.guid = nil
 end
 
 local function UpdateAuraButton(button, icon, count, duration, expirationTime)
@@ -211,8 +250,20 @@ end
 
 UpdateTargetAuras = function(frame, unit)
 	if not (frame and frame.auras and unit and UnitExists(unit)) then
+		if frame and frame.auras then
+			HideAuras(frame)
+		end
 		return
 	end
+
+	local guid = UnitGUID(unit)
+	if not guid then
+		HideAuras(frame)
+		return
+	end
+
+	frame.auras.unit = unit
+	frame.auras.guid = guid
 
 	if frame.friend then
 		HideAuras(frame)
@@ -220,19 +271,48 @@ UpdateTargetAuras = function(frame, unit)
 	end
 
 	local shown = 0
+	local auraData = {}
 
 	for i = 1, 40 do
-		local _, _, icon, count, _, duration, expirationTime = UnitAura(unit, i, "PLAYER|HARMFUL")
+		local _, _, icon, count, _, duration, expirationTime, unitCaster = UnitDebuff(unit, i)
 		if not icon then
 			break
 		end
+		if unitCaster == "player" or unitCaster == "pet" or unitCaster == "vehicle" then
+			tinsert(auraData, {
+				icon = icon,
+				count = count,
+				duration = duration,
+				expirationTime = expirationTime
+			})
+		end
+	end
 
-		shown = shown + 1
-		if shown > MAX_AURAS then
-			break
+	sort(auraData, function(a, b)
+		local aExpires = a.expirationTime and a.expirationTime > 0
+		local bExpires = b.expirationTime and b.expirationTime > 0
+
+		if aExpires ~= bExpires then
+			return aExpires
 		end
 
-		UpdateAuraButton(GetAuraButton(frame.auras, shown), icon, count, duration, expirationTime)
+		if aExpires and bExpires and a.expirationTime ~= b.expirationTime then
+			return a.expirationTime < b.expirationTime
+		end
+
+		local aDuration = a.duration or 0
+		local bDuration = b.duration or 0
+		if aDuration ~= bDuration then
+			return aDuration < bDuration
+		end
+
+		return false
+	end)
+
+	for i = 1, min(MAX_AURAS, #auraData) do
+		local aura = auraData[i]
+		shown = shown + 1
+		UpdateAuraButton(GetAuraButton(frame.auras, shown), aura.icon, aura.count, aura.duration, aura.expirationTime)
 	end
 
 	for i = shown + 1, #frame.auras.buttons do
@@ -258,6 +338,7 @@ function mod:PostShow(msg, frame)
 	end
 
 	ApplyLayout(frame)
+	SyncFrameAuras(frame)
 end
 
 function mod:PostHide(msg, frame)
@@ -276,7 +357,7 @@ function mod:UNIT_AURA(event, unit)
 	end
 
 	local frame = GetFrameByUnit(unit)
-	if frame then
+	if frame and frame.auras and frame.auras.guid == UnitGUID(unit) then
 		UpdateTargetAuras(frame, unit)
 	end
 end
@@ -284,13 +365,23 @@ end
 function mod:NAME_PLATE_UNIT_ADDED(event, unit)
 	local frame = GetFrameByUnit(unit)
 	if frame then
+		HideAuras(frame)
 		UpdateTargetAuras(frame, unit)
 	end
 end
 
 function mod:NAME_PLATE_UNIT_REMOVED(event, unit)
+	local guid = UnitGUID(unit)
+
+	for _, entry in pairs(addon.frameList) do
+		local frame = entry.kui
+		if frame and frame.auras and (frame.auras.unit == unit or (guid and frame.auras.guid == guid)) then
+			HideAuras(frame)
+		end
+	end
+
 	local frame = GetFrameByUnit(unit)
-	if frame then
+	if frame and frame.auras and (frame.auras.unit == unit or (guid and frame.auras.guid == guid)) then
 		HideAuras(frame)
 	end
 end
@@ -299,6 +390,15 @@ local function RefreshAllFrames()
 	for _, frame in pairs(addon.frameList) do
 		if frame.kui and frame.kui.auras then
 			ApplyLayout(frame.kui)
+			SyncFrameAuras(frame.kui)
+		end
+	end
+end
+
+local function RefreshVisibleAuras()
+	for _, frame in pairs(addon.frameList) do
+		if frame.kui and frame.kui:IsShown() and frame.kui.auras then
+			SyncFrameAuras(frame.kui)
 		end
 	end
 end
@@ -395,6 +495,7 @@ function mod:OnEnable()
 	self:RegisterEvent("UNIT_AURA")
 	self:RegisterEvent("NAME_PLATE_UNIT_ADDED")
 	self:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+	self.refreshTimer = addon:ScheduleRepeatingTimer(RefreshVisibleAuras, AURA_SYNC_INTERVAL)
 	RefreshAllFrames()
 end
 
@@ -406,6 +507,10 @@ function mod:OnDisable()
 	self:UnregisterEvent("UNIT_AURA")
 	self:UnregisterEvent("NAME_PLATE_UNIT_ADDED")
 	self:UnregisterEvent("NAME_PLATE_UNIT_REMOVED")
+	if self.refreshTimer then
+		addon:CancelTimer(self.refreshTimer)
+		self.refreshTimer = nil
+	end
 
 	for _, frame in pairs(addon.frameList) do
 		if frame.kui then

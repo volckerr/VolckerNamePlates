@@ -20,31 +20,34 @@ local select, pairs, ipairs, type = select, pairs, ipairs, type
 local unpack, floor = unpack, math.floor
 local strfind, strsplit, tinsert = strfind, strsplit, tinsert
 local UnitExists = UnitExists
--- non-laggy, pixel perfect positioning (Semlar's) #############################
-local function SizerOnSizeChanged(self, x, y)
-	-- because :Hide bubbles up and triggers the OnHide script of any elements
-	-- that might use it, we set MOVING to let them know they should ignore
-	-- that invocation
-	-- Hiding frames before moving them significantly increases FPS for some
-	-- reason, so I thought this was better than nothing
-	self.f.MOVING = true
-	self.f:Hide()
-	self.f:SetPoint("CENTER", WorldFrame, "BOTTOMLEFT", floor(x), floor(y))
-	self.f:Show()
-	self.f.MOVING = nil
-end
+local PLATE_TOP_PADDING = 4
+local TRIVIAL_TOP_PADDING = 2
 ------------------------------------------------------------- Frame functions --
 local function SetFrameCentre(f)
-	-- using CENTER breaks pixel-perfectness with oddly sized frames
-	-- .. so we have to align frames manually.
-	local w, h = f:GetSize()
+	local w = (f.parentFrame and f.parentFrame:GetWidth()) or f:GetWidth()
+	local h = (f.parentFrame and f.parentFrame:GetHeight()) or f:GetHeight()
 
 	if f.trivial then
 		f.x = floor((w / 2) - (addon.sizes.frame.twidth / 2))
-		f.y = floor((h / 2) - (addon.sizes.frame.theight / 2))
+		f.y = floor(h - addon.sizes.frame.theight - TRIVIAL_TOP_PADDING)
 	else
 		f.x = floor((w / 2) - (addon.sizes.frame.width / 2))
-		f.y = floor((h / 2) - (addon.sizes.frame.height / 2))
+		f.y = floor(h - addon.sizes.frame.height - PLATE_TOP_PADDING)
+	end
+end
+local function UpdateBaseClickRegion(f)
+	if not f.parentFrame then
+		return
+	end
+
+	if f.parentFrame.SetHitRectInsets then
+		f.parentFrame:SetHitRectInsets(0, 0, 0, 0)
+	end
+	if f.baseFrameHeight then
+		f.parentFrame:SetHeight(f.baseFrameHeight)
+	end
+	if f.baseFrameWidth then
+		f.parentFrame:SetWidth(f.baseFrameWidth)
 	end
 end
 -- get default health bar colour, parse it into one of our custom colours
@@ -320,15 +323,9 @@ local function OnFrameShow(self)
 	local f = self.kui
 	local trivial = f:IsTrivial()
 
-	---------------------------------------------- Trivial sizing/positioning --
-	if addon.uiscale then
-		-- change our parent frame size if we're using fixaa..
-		-- (size is changed by SetAllPoints otherwise)
-		f:SetSize(self:GetWidth() / addon.uiscale, self:GetHeight() / addon.uiscale)
-	end
-
 	if (trivial and not f.trivial) or (not trivial and f.trivial) or not f.doneFirstShow then
 		f.trivial = trivial
+		f:UpdateBaseClickRegion()
 		f:SetCentre()
 
 		addon:UpdateBackground(f, trivial)
@@ -373,6 +370,7 @@ local function OnFrameShow(self)
 	-- run updates immediately after the frame is shown
 	f.elapsed = 0
 	f.critElap = 0
+	f:UpdateBaseClickRegion()
 
 	-- reset glow colour
 	f:SetGlowColour()
@@ -562,6 +560,10 @@ local function UpdateFrameCritical(self)
 		OnFrameLeave(self)
 	end
 
+	if addon.Castbar and self.oldCastbar and self.oldCastbar:IsVisible() then
+		addon.Castbar:SyncDefaultCastbar(self)
+	end
+
 	UpdateTargetVisuals(self)
 end
 local function SetName(self)
@@ -585,7 +587,7 @@ end
 addon.SyncTargetState = SyncTargetState
 function addon:InitFrame(frame)
 	-- container for kui objects!
-	frame.kui = CreateFrame("Frame", nil, profile.general.compatibility and frame or WorldFrame)
+	frame.kui = CreateFrame("Frame", nil, frame)
 	local f = frame.kui
 
 	f.fontObjects = {}
@@ -630,6 +632,9 @@ function addon:InitFrame(frame)
 	f.oldName:Hide()
 
 	f.oldHighlight = highlightRegion
+	f.parentFrame = frame
+	f.baseFrameWidth = frame:GetWidth()
+	f.baseFrameHeight = frame:GetHeight()
 
 	--------------------------------------------------------- Frame functions --
 	f.CreateFontString = addon.CreateFontString
@@ -639,28 +644,19 @@ function addon:InitFrame(frame)
 	f.SetHealthColour = SetHealthColour
 	f.SetGlowColour = SetGlowColour
 	f.SetCentre = SetFrameCentre
+	f.UpdateBaseClickRegion = UpdateBaseClickRegion
+	f.HandleMouseEnter = OnFrameEnter
+	f.HandleMouseLeave = OnFrameLeave
 	f.OnHealthValueChanged = OnHealthValueChanged
 	f.IsTrivial = IsTrivial
 
 	------------------------------------------------------------------ Layout --
-	if profile.general.fixaa and addon.uiscale then
-		f:SetSize(frame:GetWidth() / addon.uiscale, frame:GetHeight() / addon.uiscale)
-		f:Hide()
-
-		local sizer = CreateFrame("Frame", nil, f)
-		sizer:SetPoint("BOTTOMLEFT", WorldFrame)
-		sizer:SetPoint("TOPRIGHT", frame, "CENTER")
-		sizer:SetScript("OnSizeChanged", SizerOnSizeChanged)
-		sizer.f = f
-	else
-		f:SetAllPoints(frame)
-	end
-
-	f:SetScale(addon.uiscale)
+	f:SetAllPoints(frame)
 
 	f:SetFrameStrata(profile.general.strata)
 	f:SetFrameLevel(0)
 
+	f:UpdateBaseClickRegion()
 	f:SetCentre()
 
 	self:CreateBackground(frame, f)

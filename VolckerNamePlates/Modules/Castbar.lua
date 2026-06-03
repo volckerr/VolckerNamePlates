@@ -14,6 +14,7 @@ mod.uiName = L["Cast bars"]
 
 local format = format
 local GetTime = GetTime
+local POLL_MAX_NAMEPLATES = 60
 local function ResetFade(f)
 	if not f or not f.castbar then
 		return
@@ -29,14 +30,18 @@ local function ResetFade(f)
 end
 
 local function GetFrameByUnit(unit)
-	if not (unit and C_NamePlate and C_NamePlate.GetNamePlateForUnit) then
+	if not unit then
 		return
 	end
 
-	local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
-	if nameplate and nameplate.kui then
-		return nameplate.kui
+	if C_NamePlate and C_NamePlate.GetNamePlateForUnit then
+		local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
+		if nameplate and nameplate.kui then
+			return nameplate.kui
+		end
 	end
+
+	return addon.GetUnitPlate and addon:GetUnitPlate(unit)
 end
 
 local function UpdateVisualState(f, spellName, texture, notInterruptible)
@@ -205,6 +210,14 @@ local function UpdateUnitCast(unit, channel)
 		end
 	end
 end
+local function PollVisibleCasts()
+	for i = 1, POLL_MAX_NAMEPLATES do
+		local unit = "nameplate" .. i
+		if UnitExists(unit) then
+			UpdateUnitCast(unit)
+		end
+	end
+end
 
 local sizes = {}
 
@@ -213,71 +226,11 @@ local function SetCVars()
 	SetCVar("showVKeyCastbar", 1)
 end
 ------------------------------------------------------------- Script handlers --
-local function OnDefaultCastbarShow(self)
-	if not mod.enabledState then
-		return
-	end
-
-	local f = self:GetParent().kui
-	ResetFade(f)
-
-	if mod:FrameIsIgnored(f) then
-		return
-	end
-
-	if f.castbar.name and f.castbar.spellName then
-		f.castbar.name:SetText(f.castbar.spellName)
-	end
-
-	-- is cast uninterruptible?
-	if f.shield:IsShown() then
-		f.castbar.bar:SetStatusBarColor(unpack(mod.db.profile.display.shieldbarcolour))
-		f.castbar.shield:Show()
-	else
-		f.castbar.bar:SetStatusBarColor(unpack(mod.db.profile.display.barcolour))
-		f.castbar.shield:Hide()
-	end
-
-	if f.trivial then
-		-- hide text & icon
-		if f.castbar.icon or f.castbar.curr then
-			f.castbar.curr:Hide()
-		end
-	else
-		if f.castbar.icon then
-			f.castbar.icon.tex:SetTexture(f.spell:GetTexture())
-			f.castbar.icon:Show()
-		end
-
-		if f.castbar.curr then
-			f.castbar.curr:Show()
-		end
-	end
-	-- castbar is shown on first update
-end
-local function OnDefaultCastbarHide(self)
-	local f = self:GetParent().kui
-	StopUnitCast(f)
-end
-local function OnDefaultCastbarUpdate(self, elapsed)
-	if not mod.enabledState then
-		return
-	end
-
-	local f = self:GetParent().kui
-
-	if mod:FrameIsIgnored(f) then
-		return
-	end
-
+local function SyncFromDefaultCastbar(self, f)
 	local min, max = self:GetMinMaxValues()
 
 	if f.castbar.curr then
 		f.castbar.curr:SetText(format("%.1f", self:GetValue()))
-	end
-
-	if f.castbar.name and f.castbar.spellName then
-		f.castbar.name:SetText(f.castbar.spellName)
 	end
 
 	f.castbar.bar:SetMinMaxValues(min, max)
@@ -292,7 +245,6 @@ local function OnDefaultCastbarUpdate(self, elapsed)
 	end
 
 	if f.trivial then
-		-- hide text & icon
 		if f.castbar.icon or f.castbar.curr then
 			f.castbar.curr:Hide()
 		end
@@ -309,6 +261,56 @@ local function OnDefaultCastbarUpdate(self, elapsed)
 
 	f.castbar:Show()
 end
+function mod:SyncDefaultCastbar(frame)
+	if not frame or not frame.oldCastbar or not frame.oldCastbar:IsVisible() then
+		return
+	end
+
+	if self:FrameIsIgnored(frame) then
+		return
+	end
+
+	SyncFromDefaultCastbar(frame.oldCastbar, frame)
+end
+local function OnDefaultCastbarShow(self)
+	if not mod.enabledState then
+		return
+	end
+
+	local f = self:GetParent().kui
+	ResetFade(f)
+
+	if mod:FrameIsIgnored(f) then
+		return
+	end
+
+	if f.castbar.name and f.castbar.spellName then
+		f.castbar.name:SetText(f.castbar.spellName)
+	end
+
+	mod:SyncDefaultCastbar(f)
+end
+local function OnDefaultCastbarHide(self)
+	local f = self:GetParent().kui
+	StopUnitCast(f)
+end
+local function OnDefaultCastbarUpdate(self, elapsed)
+	if not mod.enabledState then
+		return
+	end
+
+	local f = self:GetParent().kui
+
+	if mod:FrameIsIgnored(f) then
+		return
+	end
+
+	if f.castbar.name and f.castbar.spellName then
+		f.castbar.name:SetText(f.castbar.spellName)
+	end
+
+	mod:SyncDefaultCastbar(f)
+end
 local function OnDefaultCastbarEvent(self, event, unit, spellName, spellRank)
 	if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
 		local frame = GetFrameByUnit(unit) or addon:GetUnitPlate(unit)
@@ -322,31 +324,22 @@ function mod:UNIT_SPELLCAST_START(event, unit)
 	UpdateUnitCast(unit)
 end
 function mod:UNIT_SPELLCAST_STOP(event, unit)
-	local frame = GetFrameByUnit(unit)
-	if frame then
-		StopUnitCast(frame)
-	end
+	UpdateUnitCast(unit)
 end
 function mod:UNIT_SPELLCAST_INTERRUPTED(event, unit)
-	local frame = GetFrameByUnit(unit)
-	if frame then
-		StopUnitCast(frame)
-	end
+	UpdateUnitCast(unit)
 end
 function mod:UNIT_SPELLCAST_CHANNEL_START(event, unit)
 	UpdateUnitCast(unit, true)
 end
 function mod:UNIT_SPELLCAST_CHANNEL_STOP(event, unit)
-	local frame = GetFrameByUnit(unit)
-	if frame then
-		StopUnitCast(frame)
-	end
+	UpdateUnitCast(unit)
 end
 function mod:NAME_PLATE_UNIT_ADDED(event, unit)
 	UpdateUnitCast(unit)
 end
 function mod:NAME_PLATE_UNIT_REMOVED(event, unit)
-	local frame = GetFrameByUnit(unit)
+	local frame = GetFrameByUnit(unit) or addon:GetUnitPlate(unit)
 	if frame then
 		StopUnitCast(frame)
 	end
@@ -621,6 +614,7 @@ function mod:OnEnable()
 	self:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 	self:RegisterEvent("NAME_PLATE_UNIT_ADDED")
 	self:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+	self.castPollTimer = addon:ScheduleRepeatingTimer(PollVisibleCasts, 0.1)
 
 	for _, frame in pairs(addon.frameList) do
 		if not frame.kui or not frame.kui.castbar then
@@ -636,6 +630,10 @@ function mod:OnDisable()
 	self:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 	self:UnregisterEvent("NAME_PLATE_UNIT_ADDED")
 	self:UnregisterEvent("NAME_PLATE_UNIT_REMOVED")
+	if self.castPollTimer then
+		addon:CancelTimer(self.castPollTimer)
+		self.castPollTimer = nil
+	end
 
 	for _, frame in pairs(addon.frameList) do
 		self:HideCastbar(frame.kui)
